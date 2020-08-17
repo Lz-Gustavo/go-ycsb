@@ -4,6 +4,8 @@ require (
 	cloud.google.com/go v0.49.0 // indirect
 	cloud.google.com/go/spanner v1.1.0
 	github.com/AndreasBriese/bbloom v0.0.0-20180913140656-343706a395b7 // indirect
+	github.com/BurntSushi/toml v0.3.1
+	github.com/Lz-Gustavo/beelog v0.0.0-20200806172403-b4e603daa4cf
 	github.com/XiaoMi/pegasus-go-client v0.0.0-20181029071519-9400942c5d1c
 	github.com/aerospike/aerospike-client-go v1.35.2
 	github.com/apache/thrift v0.0.0-20171203172758-327ebb6c2b6d // indirect
@@ -28,7 +30,7 @@ require (
 	github.com/gocql/gocql v0.0.0-20181124151448-70385f88b28b
 	github.com/gogo/protobuf v1.2.0 // indirect
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
-	github.com/google/go-cmp v0.3.1 // indirect
+	github.com/golang/protobuf v1.4.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.0.1-0.20190118093823-f849b5445de4 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jstemmer/go-junit-report v0.9.1 // indirect
