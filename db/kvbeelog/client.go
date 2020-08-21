@@ -21,7 +21,7 @@ type Info struct {
 	reader []*bufio.Reader
 
 	Localip  string
-	Udpport  int
+	Udpport  string
 	receiver *net.UDPConn
 
 	ThinkingTimeMsec int
@@ -73,9 +73,14 @@ func (client *Info) Disconnect() {
 
 // StartUDP initializes UDP listener, used to receive servers repplies
 func (client *Info) StartUDP() error {
+	port, err := strconv.ParseInt(client.Udpport, 10, 32)
+	if err != nil {
+		return err
+	}
+
 	addr := net.UDPAddr{
 		IP:   net.ParseIP(client.Localip),
-		Port: client.Udpport,
+		Port: int(port),
 		Zone: "",
 	}
 	conn, err := net.ListenUDP("udp", &addr)
@@ -89,7 +94,7 @@ func (client *Info) StartUDP() error {
 // Broadcast a message to the cluster
 func (client *Info) Broadcast(message string) error {
 	for _, v := range client.Svrs {
-		_, err := fmt.Fprint(v, strconv.Itoa(client.Udpport)+"-"+message)
+		_, err := fmt.Fprint(v, client.Udpport+"-"+message)
 		if err != nil {
 			return err
 		}
