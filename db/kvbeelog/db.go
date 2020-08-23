@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/Lz-Gustavo/beelog/pb"
@@ -19,10 +21,18 @@ const (
 	kvbeelogConfigFn = "kvbeelog.config"
 
 	// An empty value indicates none latency output.
-	kvbeelogOutputFn = "kvbeelog.output"
+	kvbeelogOutputDir = "kvbeelog.output"
 
 	// One client has a '1/measureChance' chance to capture latency of it's next requisition.
-	measureChance int = 30
+	measureChance = 30
+
+	// The ceil of 'clients/watcherRatio' indicates the number of clients recording latency
+	// based on 'measureChance'. A ratio greater then the number of clients indicates that all
+	// clients will be recording latency.
+	watcherRatio = 3
+
+	// Sleeps up to thinkTime msec after each request.
+	thinkTime = 10
 )
 
 type contextKey int
@@ -41,6 +51,7 @@ func getContextThreadID(ctx context.Context) (int, bool) {
 type beelogKV struct {
 	clients []Info
 	out     bool
+	maxC    int
 	outFile *os.File
 	props   *properties.Properties
 }
@@ -65,6 +76,11 @@ func (bk *beelogKV) Read(ctx context.Context, table string, key string, fields [
 	if err != nil {
 		return nil, err
 	}
+
+	if thinkTime > 0 {
+		time.Sleep(time.Duration(rand.Intn(thinkTime+1)) * time.Millisecond)
+	}
+
 	return map[string][]byte{
 		key: []byte(rep),
 	}, nil
@@ -97,6 +113,10 @@ func (bk *beelogKV) Insert(ctx context.Context, table string, key string, values
 
 	if _, err = bk.clients[id].ReadUDP(); err != nil {
 		return err
+	}
+
+	if thinkTime > 0 {
+		time.Sleep(time.Duration(rand.Intn(thinkTime+1)) * time.Millisecond)
 	}
 	return nil
 }
@@ -163,7 +183,7 @@ func (bk *beelogKV) Delete(ctx context.Context, table string, key string) error 
 }
 
 func (bk *beelogKV) sendProtoBuff(cmd *pb.Command, id int) error {
-	if bk.out && checkLat() {
+	if bk.out && id < bk.maxC && checkLat() {
 		st := time.Now()
 		if err := bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport); err != nil {
 			return err
@@ -185,22 +205,24 @@ func (bc beelogKVCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 	var fd *os.File
 	var err error
 
-	outFn, ok := p.Get(kvbeelogOutputFn)
-	if ok {
-		fd, err = os.OpenFile(outFn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0400)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	ths := p.GetInt(prop.ThreadCount, -1)
 	if ths < 0 {
 		log.Fatalln("could not interpret number of threads from properties")
 	}
 
+	outDir, ok := p.Get(kvbeelogOutputDir)
+	if ok {
+		outFn := outDir + strconv.Itoa(ths) + "c-latency.out"
+		fd, err = os.OpenFile(outFn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &beelogKV{
 		clients: make([]Info, ths, ths),
 		out:     ok,
+		maxC:    int(math.Ceil(float64(ths) / watcherRatio)),
 		outFile: fd,
 		props:   p,
 	}, nil
