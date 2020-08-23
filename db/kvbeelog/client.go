@@ -72,17 +72,22 @@ func (client *Info) Disconnect() {
 }
 
 // StartUDP initializes UDP listener, used to receive servers repplies
-func (client *Info) StartUDP() error {
-	port, err := strconv.ParseInt(client.Udpport, 10, 32)
+func (client *Info) StartUDP(id int) error {
+	port64, err := strconv.ParseInt(client.Udpport, 10, 32)
 	if err != nil {
 		return err
 	}
 
+	port := int(port64) + id
 	addr := net.UDPAddr{
 		IP:   net.ParseIP(client.Localip),
-		Port: int(port),
+		Port: port,
 		Zone: "",
 	}
+
+	//update client new port
+	client.Udpport = strconv.Itoa(port)
+
 	conn, err := net.ListenUDP("udp", &addr)
 	if err != nil {
 		return err
