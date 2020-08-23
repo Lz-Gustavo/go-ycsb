@@ -10,6 +10,7 @@ import (
 
 	"github.com/Lz-Gustavo/beelog/pb"
 	"github.com/magiconair/properties"
+	"github.com/pingcap/go-ycsb/pkg/prop"
 	"github.com/pingcap/go-ycsb/pkg/ycsb"
 )
 
@@ -41,7 +42,7 @@ type beelogKV struct {
 	clients []Info
 	out     bool
 	outFile *os.File
-	prop    *properties.Properties
+	props   *properties.Properties
 }
 
 // Read reads a record from the database and returns a map of each field/value pair.
@@ -114,7 +115,7 @@ func (bk *beelogKV) Update(ctx context.Context, table string, key string, values
 // Initializes a new client on bk.clients, returns threadID in context to be used by
 // operation methods. Safe workflow since threadIDs ARE monotonically increased.
 func (bk *beelogKV) InitThread(ctx context.Context, threadID int, threadCount int) context.Context {
-	fn, ok := bk.prop.Get(kvbeelogConfigFn)
+	fn, ok := bk.props.Get(kvbeelogConfigFn)
 	if !ok {
 		fn = defaultConfigFn
 	}
@@ -131,7 +132,7 @@ func (bk *beelogKV) InitThread(ctx context.Context, threadID int, threadCount in
 		log.Fatalln("could not init thread, err:", err.Error())
 	}
 
-	bk.clients = append(bk.clients, *cl)
+	bk.clients[threadID] = *cl
 	return context.WithValue(ctx, ctxThreadID, threadID)
 }
 
@@ -192,11 +193,16 @@ func (bc beelogKVCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		}
 	}
 
+	ths := p.GetInt(prop.ThreadCount, -1)
+	if ths < 0 {
+		log.Fatalln("could not interpret number of threads from properties")
+	}
+
 	return &beelogKV{
-		clients: make([]Info, 0, 0),
+		clients: make([]Info, ths, ths),
 		out:     ok,
 		outFile: fd,
-		prop:    p,
+		props:   p,
 	}, nil
 }
 
