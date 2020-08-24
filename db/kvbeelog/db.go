@@ -67,12 +67,7 @@ func (bk *beelogKV) Read(ctx context.Context, table string, key string, fields [
 		Op:  pb.Command_GET,
 		Key: key,
 	}
-	err := bk.sendProtoBuff(cmd, id)
-	if err != nil {
-		return nil, err
-	}
-
-	rep, err := bk.clients[id].ReadUDP()
+	rep, err := bk.sendProtoBuffWithRep(cmd, id)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +75,8 @@ func (bk *beelogKV) Read(ctx context.Context, table string, key string, fields [
 	if thinkTime > 0 {
 		time.Sleep(time.Duration(rand.Intn(thinkTime+1)) * time.Millisecond)
 	}
-
 	return map[string][]byte{
-		key: []byte(rep),
+		key: rep,
 	}, nil
 }
 
@@ -108,10 +102,6 @@ func (bk *beelogKV) Insert(ctx context.Context, table string, key string, values
 	}
 	err := bk.sendProtoBuff(cmd, id)
 	if err != nil {
-		return err
-	}
-
-	if _, err = bk.clients[id].ReadUDP(); err != nil {
 		return err
 	}
 
@@ -185,12 +175,45 @@ func (bk *beelogKV) Delete(ctx context.Context, table string, key string) error 
 func (bk *beelogKV) sendProtoBuff(cmd *pb.Command, id int) error {
 	if bk.out && id < bk.maxC && checkLat() {
 		st := time.Now()
-		if err := bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport); err != nil {
+		err := bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport)
+		if err != nil {
 			return err
 		}
-		return bk.recordLat(time.Since(st))
+		if _, err = bk.clients[id].ReadUDP(); err != nil {
+			return err
+		}
+		return bk.recordLat(time.Since(st) / time.Nanosecond)
 	}
-	return bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport)
+
+	err := bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport)
+	if err != nil {
+		return err
+	}
+	_, err = bk.clients[id].ReadUDP()
+	return err
+}
+
+func (bk *beelogKV) sendProtoBuffWithRep(cmd *pb.Command, id int) ([]byte, error) {
+	if bk.out && id < bk.maxC && checkLat() {
+		st := time.Now()
+		if err := bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport); err != nil {
+			return nil, err
+		}
+		rep, err := bk.clients[id].ReadUDP()
+		if err != nil {
+			return nil, err
+		}
+		return []byte(rep), bk.recordLat(time.Since(st) / time.Nanosecond)
+	}
+
+	if err := bk.clients[id].BroadcastProtobuf(cmd, bk.clients[id].Udpport); err != nil {
+		return nil, err
+	}
+	rep, err := bk.clients[id].ReadUDP()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(rep), nil
 }
 
 func (bk *beelogKV) recordLat(dur time.Duration) error {
