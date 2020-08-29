@@ -70,6 +70,7 @@ import (
 
 	// Register kvbeelog
 	_ "github.com/pingcap/go-ycsb/db/kvbeelog"
+	_ "github.com/pingcap/go-ycsb/db/localkv"
 )
 
 var (

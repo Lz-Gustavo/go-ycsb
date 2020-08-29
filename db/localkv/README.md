@@ -6,19 +6,10 @@ TODO
 
 ```
 make
-./bin/go-ycsb run localkv -P workloads/workloadb -p localkv.config=/home/lzgustavo/go/src/go-ycsb/db/localkv/client-config.toml
+./bin/go-ycsb run localkv -P workloads/workloadb -p localkv.output=/home/lzgustavo/go/src/go-ycsb/db/localkv/ -p localkv.interval=10000 -p threadcount=1 -p recordcount=1000000 -p operationcount=600000
 ```
 
-Enable output flag:
+Enable traditional log scheme:
 ```
--p localkv.output=/home/lzgustavo/go/src/go-ycsb/db/localkv/latency.out
+-p localkv.logfolder=/tmp/
 ```
-
-Multiple threads, diff records, num operations, target ops/sec:
-```
--p threadcount=1 -p recordcount=1000000 -p operationcount=600000 -p target=10000
-```
-
-**NOTE:** call ```operationscount=threadcount*600000```
-
-**TODO:** account threadcount on target to avoid early saturation

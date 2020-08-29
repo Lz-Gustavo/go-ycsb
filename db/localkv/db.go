@@ -2,6 +2,7 @@ package localkv
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Lz-Gustavo/beelog"
 	"github.com/Lz-Gustavo/beelog/pb"
+	"github.com/golang/protobuf/proto"
 	"github.com/magiconair/properties"
 	"github.com/pingcap/go-ycsb/pkg/prop"
 	"github.com/pingcap/go-ycsb/pkg/ycsb"
@@ -20,8 +22,8 @@ const (
 	localkvOutputDir = "localkv.output"
 
 	// if none passed, beelog is used instead.
-	localkvLogDir = "localkv.logfolder"
-	beelogDir     = "/tmp/"
+	localkvLogDir         = "localkv.logfolder"
+	localkvBeelogInterval = "localkv.interval"
 )
 
 type localKV struct {
@@ -33,6 +35,7 @@ type localKV struct {
 	logFile *os.File
 	ct      *beelog.ConcTable
 
+	index uint64 // atomic
 	count uint32 // atomic
 	t     *time.Ticker
 }
@@ -86,6 +89,7 @@ func (lk *localKV) InitThread(ctx context.Context, threadID int, threadCount int
 
 // Close closes the database layer.
 func (lk *localKV) Close() error {
+	lk.cancel()
 	return lk.outFile.Close()
 }
 
@@ -106,7 +110,30 @@ func (lk *localKV) Delete(ctx context.Context, table string, key string) error {
 
 // log command on a std file, emulating traditional approach, or utilize beelog
 func (lk *localKV) logCommand(cmd *pb.Command) error {
-	// TODO: log command following diff configs
+	if lk.trad {
+		rawCmd, err := proto.Marshal(cmd)
+		if err != nil {
+			return err
+		}
+
+		err = binary.Write(lk.logFile, binary.BigEndian, int32(len(rawCmd)))
+		if err != nil {
+			return err
+		}
+
+		_, err = lk.logFile.Write(rawCmd)
+		if err != nil {
+			return err
+		}
+
+	} else {
+		// must set any command index
+		cmd.Id = atomic.AddUint64(&lk.index, 1)
+		if err := lk.ct.Log(*cmd); err != nil {
+			return err
+		}
+	}
+	atomic.AddUint32(&lk.count, 1)
 	return nil
 }
 
@@ -117,7 +144,7 @@ func (lk *localKV) monitorThroughput(ctx context.Context) error {
 			return nil
 
 		case <-lk.t.C:
-			t := atomic.LoadUint32(&lk.count)
+			t := atomic.SwapUint32(&lk.count, 0)
 			_, err := fmt.Fprintf(lk.outFile, "%d\n", t)
 			if err != nil {
 				return err
@@ -161,9 +188,6 @@ func (lc localKVCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 	}
 
 	if logD != "" {
-		lk.ct = beelog.NewConcTable(ctx)
-
-	} else {
 		fn := logD + "logfile.log"
 		fd, err = os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
@@ -171,6 +195,24 @@ func (lc localKVCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		}
 		lk.trad = true
 		lk.logFile = fd
+
+	} else {
+		pd := p.GetInt(localkvBeelogInterval, -1)
+		if pd < 0 {
+			log.Fatalln("could not interpret beelog interval from properties")
+		}
+
+		cfg := &beelog.LogConfig{
+			Alg:     beelog.IterConcTable,
+			Tick:    beelog.Interval,
+			Period:  uint32(pd),
+			KeepAll: true,
+			Fname:   "/tmp/beelog-local.log",
+		}
+		lk.ct, err = beelog.NewConcTableWithConfig(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	go lk.monitorThroughput(ctx)
