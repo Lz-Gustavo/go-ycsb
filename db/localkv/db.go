@@ -90,6 +90,9 @@ func (lk *localKV) InitThread(ctx context.Context, threadID int, threadCount int
 // Close closes the database layer.
 func (lk *localKV) Close() error {
 	lk.cancel()
+	if lk.trad {
+		lk.logFile.Close()
+	}
 	return lk.outFile.Close()
 }
 
@@ -110,6 +113,9 @@ func (lk *localKV) Delete(ctx context.Context, table string, key string) error {
 
 // log command on a std file, emulating traditional approach, or utilize beelog
 func (lk *localKV) logCommand(cmd *pb.Command) error {
+	// must set any command index
+	cmd.Id = atomic.AddUint64(&lk.index, 1)
+
 	if lk.trad {
 		rawCmd, err := proto.Marshal(cmd)
 		if err != nil {
@@ -127,8 +133,6 @@ func (lk *localKV) logCommand(cmd *pb.Command) error {
 		}
 
 	} else {
-		// must set any command index
-		cmd.Id = atomic.AddUint64(&lk.index, 1)
 		if err := lk.ct.Log(*cmd); err != nil {
 			return err
 		}
