@@ -1,2 +1,2 @@
-# go-ycsb/loaderbeelog
+# go-ycsb/loadgenkv
 TODO

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	loadgenOutputFn = "loadgen.outfilename"
+	loadgenOutputFn = "loadgenkv.outfilename"
 	byteBlocks      = 1
 )
 
