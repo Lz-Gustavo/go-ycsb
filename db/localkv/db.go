@@ -187,10 +187,6 @@ func (lc localKVCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 	}
 
 	logD := p.GetString(localkvLogDir, "")
-	if ths < 0 {
-		log.Fatalln("could not interpret number of threads from properties")
-	}
-
 	if logD != "" {
 		fn := logD + "logfile.log"
 		fd, err = os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0600)

@@ -5,5 +5,7 @@ log
 .idea
 .vscode
 vendor
+
+*.cmds
 *.out
 *.log
