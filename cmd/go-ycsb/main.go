@@ -41,8 +41,9 @@ import (
 	_ "github.com/pingcap/go-ycsb/db/basic"
 	// Register MySQL database
 	_ "github.com/pingcap/go-ycsb/db/mysql"
-	// Register TiKV database
-	_ "github.com/pingcap/go-ycsb/db/tikv"
+
+	// -- removed TiKV due to protocol buffers naming conflicts
+
 	// Register PostgreSQL database
 	_ "github.com/pingcap/go-ycsb/db/pg"
 	// Register Aerospike database
@@ -69,6 +70,7 @@ import (
 	_ "github.com/pingcap/go-ycsb/db/minio"
 
 	// Register kvbeelog
+	_ "github.com/pingcap/go-ycsb/db/etcd"
 	_ "github.com/pingcap/go-ycsb/db/kvbeelog"
 	_ "github.com/pingcap/go-ycsb/db/loadgenkv"
 	_ "github.com/pingcap/go-ycsb/db/localkv"

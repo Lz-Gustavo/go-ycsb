@@ -12,6 +12,8 @@ const (
 	defaultEtcdPort = ":2379"
 )
 
+var parsedEtcdHostname = ""
+
 // Client ...
 type Client struct {
 	cl     *clientv3.Client
@@ -24,7 +26,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 	ec := &Client{cancel: cn}
 
 	cl, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{defaultEtcdIP + defaultEtcdPort},
+		Endpoints:   []string{parsedEtcdHostname + defaultEtcdPort},
 		Context:     ct,
 		DialTimeout: 3 * time.Second,
 	})

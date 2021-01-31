@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	// TODO: parse etcd ip from commandline args
+	// Currently supporting a single node, and alway defaults to port ":2379"
+	etcdNodeHostname = "etcd.hostname"
 
 	// An empty value indicates none latency output.
 	etcdLatencyFilename = "etcd.latfilename"
@@ -84,11 +85,17 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 		}
 	}
 
+	// if got any value, return
+	var val []byte
+	if len(rep.Kvs) > 0 {
+		val = rep.Kvs[0].Value
+	}
+
 	if thinkTime > 0 {
 		time.Sleep(time.Duration(rand.Intn(thinkTime+1)) * time.Millisecond)
 	}
 	return map[string][]byte{
-		key: rep.Kvs[0].Value,
+		key: val,
 	}, nil
 }
 
@@ -205,6 +212,11 @@ func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	parsedEtcdHostname, ok = p.Get(etcdNodeHostname)
+	if !ok {
+		parsedEtcdHostname = defaultEtcdIP
 	}
 
 	return &etcdDB{
