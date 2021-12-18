@@ -30,8 +30,10 @@ const (
 	// clients will be recording latency.
 	watcherRatio = 3
 
-	// Sleeps up to thinkTime msec after each request.
-	thinkTime = 10
+	// Sleeps up to thinkTime msec after each request. If no etcdThinkingTime property is informed,
+	// defaultThinkTime value is assumed. A zero or negative number completely disables it.
+	etcdThinkingTime     = "etcd.thinktime"
+	defaultThinkTime int = 10
 )
 
 type contextKey int
@@ -50,6 +52,9 @@ type etcdDB struct {
 	cl    []Client
 	maxC  int
 	props *properties.Properties
+
+	thinkEnabled bool
+	thinkIime    int
 
 	lat     bool
 	latFile *os.File
@@ -91,8 +96,8 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 		val = rep.Kvs[0].Value
 	}
 
-	if thinkTime > 0 {
-		time.Sleep(time.Duration(rand.Intn(thinkTime+1)) * time.Millisecond)
+	if ed.thinkEnabled {
+		time.Sleep(time.Duration(rand.Intn(ed.thinkIime+1)) * time.Millisecond)
 	}
 	return map[string][]byte{
 		key: val,
@@ -134,8 +139,8 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 		}
 	}
 
-	if thinkTime > 0 {
-		time.Sleep(time.Duration(rand.Intn(thinkTime+1)) * time.Millisecond)
+	if ed.thinkEnabled {
+		time.Sleep(time.Duration(rand.Intn(ed.thinkIime+1)) * time.Millisecond)
 	}
 	return nil
 }
@@ -219,12 +224,15 @@ func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		parsedEtcdHostname = defaultEtcdIP
 	}
 
+	tt := p.GetInt(etcdThinkingTime, defaultThinkTime)
 	return &etcdDB{
-		cl:      make([]Client, ths, ths),
-		maxC:    int(math.Ceil(float64(ths) / watcherRatio)),
-		props:   p,
-		lat:     ok,
-		latFile: fd,
+		cl:           make([]Client, ths),
+		maxC:         int(math.Ceil(float64(ths) / watcherRatio)),
+		props:        p,
+		thinkEnabled: tt > 0,
+		thinkIime:    tt,
+		lat:          ok,
+		latFile:      fd,
 	}, nil
 }
 
