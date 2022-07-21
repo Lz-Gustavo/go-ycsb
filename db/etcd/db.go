@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"os"
 	"time"
 
 	"github.com/magiconair/properties"
@@ -29,6 +28,10 @@ const (
 	// based on 'measureChance'. A ratio greater then the number of clients indicates that all
 	// clients will be recording latency.
 	watcherRatio = 3
+
+	// Overwrites all previous configurations and enables latency measurement on all requests,
+	// if a 'etcdLatencyFilename' was configured.
+	recordAll = true
 
 	// Sleeps up to thinkTime msec after each request. If no etcdThinkingTime property is informed,
 	// defaultThinkTime value is assumed. A zero or negative number completely disables it.
@@ -54,10 +57,10 @@ type etcdDB struct {
 	props *properties.Properties
 
 	thinkEnabled bool
-	thinkIime    int
+	thinkTime    int
 
-	lat     bool
-	latFile *os.File
+	lat bool
+	msr *LatencyMsr
 }
 
 // Read reads a record from the database and returns a map of each field/value pair.
@@ -71,14 +74,14 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 	var err error
 
 	// if measuring latency for this request
-	if ed.lat && id < ed.maxC && checkLat() {
+	if ed.lat && (recordAll || ed.mustCheckLat(id)) {
 		st := time.Now()
 		rep, err = ed.cl[id].cl.Get(ctx, key)
 		if err != nil {
 			return nil, err
 		}
 
-		err = ed.recordLat(time.Since(st) / time.Nanosecond)
+		err = ed.msr.Record(time.Since(st))
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +100,7 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 	}
 
 	if ed.thinkEnabled {
-		time.Sleep(time.Duration(rand.Intn(ed.thinkIime+1)) * time.Millisecond)
+		time.Sleep(time.Duration(rand.Intn(ed.thinkTime+1)) * time.Millisecond)
 	}
 	return map[string][]byte{
 		key: val,
@@ -120,14 +123,14 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 	}
 
 	// if measuring latency for this request
-	if ed.lat && id < ed.maxC && checkLat() {
+	if ed.lat && (recordAll || ed.mustCheckLat(id)) {
 		st := time.Now()
 		_, err := ed.cl[id].cl.Put(ctx, key, string(val))
 		if err != nil {
 			return err
 		}
 
-		err = ed.recordLat(time.Since(st) / time.Nanosecond)
+		err = ed.msr.Record(time.Since(st))
 		if err != nil {
 			return err
 		}
@@ -140,7 +143,7 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 	}
 
 	if ed.thinkEnabled {
-		time.Sleep(time.Duration(rand.Intn(ed.thinkIime+1)) * time.Millisecond)
+		time.Sleep(time.Duration(rand.Intn(ed.thinkTime+1)) * time.Millisecond)
 	}
 	return nil
 }
@@ -173,10 +176,14 @@ func (ed *etcdDB) Close() error {
 	for _, cl := range ed.cl {
 		cl.shutdown()
 	}
-	if ed.lat {
-		return ed.latFile.Close()
+	if !ed.lat {
+		return nil
 	}
-	return nil
+
+	if err := ed.msr.Flush(); err != nil {
+		return err
+	}
+	return ed.msr.Close()
 }
 
 // CleanupThread cleans up the state when the worker finished.
@@ -194,16 +201,15 @@ func (ed *etcdDB) Delete(ctx context.Context, table string, key string) error {
 	return nil
 }
 
-func (ed *etcdDB) recordLat(dur time.Duration) error {
-	_, err := fmt.Fprintf(ed.latFile, "%d\n", dur)
-	return err
+func (ed *etcdDB) mustCheckLat(id int) bool {
+	return id < ed.maxC && rand.Intn(measureChance) == 0
 }
 
 type etcdDBCreator struct {
 }
 
 func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
-	var fd *os.File
+	var latMsr *LatencyMsr
 	var err error
 
 	ths := p.GetInt(prop.ThreadCount, -1)
@@ -211,16 +217,17 @@ func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		log.Fatalln("could not interpret number of threads from properties")
 	}
 
-	fn, ok := p.Get(etcdLatencyFilename)
-	if ok {
-		fd, err = os.OpenFile(fn, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0600)
+	fn, informedLat := p.Get(etcdLatencyFilename)
+	if informedLat {
+		latMsr, err = NewLatencyMsr(fn)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	parsedEtcdHostname, ok = p.Get(etcdNodeHostname)
-	if !ok {
+	var exists bool
+	parsedEtcdHostname, exists = p.Get(etcdNodeHostname)
+	if !exists {
 		parsedEtcdHostname = defaultEtcdIP
 	}
 
@@ -230,16 +237,12 @@ func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		maxC:         int(math.Ceil(float64(ths) / watcherRatio)),
 		props:        p,
 		thinkEnabled: tt > 0,
-		thinkIime:    tt,
-		lat:          ok,
-		latFile:      fd,
+		thinkTime:    tt,
+		lat:          informedLat,
+		msr:          latMsr,
 	}, nil
 }
 
 func init() {
 	ycsb.RegisterDBCreator("etcd", etcdDBCreator{})
-}
-
-func checkLat() bool {
-	return rand.Intn(measureChance) == 0
 }
