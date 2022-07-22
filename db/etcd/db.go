@@ -3,7 +3,6 @@ package etcd
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
 	"time"
@@ -20,6 +19,12 @@ const (
 
 	// An empty value indicates none latency output.
 	etcdLatencyFilename = "etcd.latfilename"
+
+	// Number of different connections to distributed threads, same implementation as in
+	// the benchmark:
+	// https://github.com/etcd-io/etcd/blob/main/tools/benchmark/cmd/util.go#L137
+	etcdNumberOfConns    = "etcd.conns"
+	defaultNumberOfConns = 1
 
 	// One client has a '1/measureChance' chance to capture latency of it's next requisition.
 	measureChance = 30
@@ -52,7 +57,7 @@ func getContextThreadID(ctx context.Context) (int, bool) {
 }
 
 type etcdDB struct {
-	cl    []Client
+	cl    []*Client
 	maxC  int
 	props *properties.Properties
 
@@ -162,12 +167,6 @@ func (ed *etcdDB) Update(ctx context.Context, table string, key string, values m
 // Initializes a new client on ed.clients, returns threadID in context to be used by
 // operation methods. Safe workflow since threadIDs ARE monotonically increased.
 func (ed *etcdDB) InitThread(ctx context.Context, threadID int, threadCount int) context.Context {
-	cl, err := NewClient(ctx)
-	if err != nil {
-		log.Fatalln("could not init thread, err:", err.Error())
-	}
-
-	ed.cl[threadID] = *cl
 	return context.WithValue(ctx, ctxThreadID, threadID)
 }
 
@@ -209,20 +208,9 @@ type etcdDBCreator struct {
 }
 
 func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
-	var latMsr *LatencyMsr
-	var err error
-
-	ths := p.GetInt(prop.ThreadCount, -1)
-	if ths < 0 {
-		log.Fatalln("could not interpret number of threads from properties")
-	}
-
-	fn, informedLat := p.Get(etcdLatencyFilename)
-	if informedLat {
-		latMsr, err = NewLatencyMsr(fn)
-		if err != nil {
-			return nil, err
-		}
+	numClients := p.GetInt(prop.ThreadCount, -1)
+	if numClients < 0 {
+		return nil, fmt.Errorf("could not interpret number of threads from properties")
 	}
 
 	var exists bool
@@ -231,16 +219,48 @@ func (ec etcdDBCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		parsedEtcdHostname = defaultEtcdIP
 	}
 
-	tt := p.GetInt(etcdThinkingTime, defaultThinkTime)
+	numConns := p.GetInt(etcdNumberOfConns, defaultNumberOfConns)
+	clients, err := createClients(numClients, numConns)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize clients, err: %w", err)
+	}
+
+	var latMsr *LatencyMsr
+	fn, informedLat := p.Get(etcdLatencyFilename)
+	if informedLat {
+		latMsr, err = NewLatencyMsr(fn)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	thinkTime := p.GetInt(etcdThinkingTime, defaultThinkTime)
 	return &etcdDB{
-		cl:           make([]Client, ths),
-		maxC:         int(math.Ceil(float64(ths) / watcherRatio)),
+		cl:           clients,
+		maxC:         int(math.Ceil(float64(numClients) / watcherRatio)),
 		props:        p,
-		thinkEnabled: tt > 0,
-		thinkTime:    tt,
+		thinkEnabled: thinkTime > 0,
+		thinkTime:    thinkTime,
 		lat:          informedLat,
 		msr:          latMsr,
 	}, nil
+}
+
+func createClients(totalClients, totalConns int) ([]*Client, error) {
+	conns := make([]*Client, totalConns)
+	for i := range conns {
+		cl, err := NewClient(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		conns[i] = cl
+	}
+
+	clients := make([]*Client, totalClients)
+	for i := range clients {
+		clients[i] = conns[i%totalConns]
+	}
+	return clients, nil
 }
 
 func init() {

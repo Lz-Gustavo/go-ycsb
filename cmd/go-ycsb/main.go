@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -24,18 +25,15 @@ import (
 	"time"
 
 	"github.com/magiconair/properties"
-
-	// Register workload
-
-	"fmt"
-
 	"github.com/pingcap/go-ycsb/pkg/client"
 	"github.com/pingcap/go-ycsb/pkg/measurement"
 	"github.com/pingcap/go-ycsb/pkg/prop"
 	"github.com/pingcap/go-ycsb/pkg/util"
-	_ "github.com/pingcap/go-ycsb/pkg/workload"
 	"github.com/pingcap/go-ycsb/pkg/ycsb"
 	"github.com/spf13/cobra"
+
+	// Register workload
+	_ "github.com/pingcap/go-ycsb/pkg/workload"
 
 	// Register basic database
 	_ "github.com/pingcap/go-ycsb/db/basic"
@@ -70,10 +68,10 @@ import (
 	_ "github.com/pingcap/go-ycsb/db/minio"
 
 	// Register kvbeelog
+	//_ "github.com/pingcap/go-ycsb/db/kvbeelog"
+	//_ "github.com/pingcap/go-ycsb/db/loadgenkv"
+	//_ "github.com/pingcap/go-ycsb/db/localkv"
 	_ "github.com/pingcap/go-ycsb/db/etcd"
-	_ "github.com/pingcap/go-ycsb/db/kvbeelog"
-	_ "github.com/pingcap/go-ycsb/db/loadgenkv"
-	_ "github.com/pingcap/go-ycsb/db/localkv"
 )
 
 var (
