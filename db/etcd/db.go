@@ -2,9 +2,12 @@ package etcd
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/magiconair/properties"
@@ -75,13 +78,17 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 		return nil, fmt.Errorf("could not load threadid from context")
 	}
 
+	keyB, err := convertKeyToInt64Binary(key)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert key, err: %w", err)
+	}
+
 	var rep *clientv3.GetResponse
-	var err error
 
 	// if measuring latency for this request
 	if ed.lat && (recordAll || ed.mustCheckLat(id)) {
 		st := time.Now()
-		rep, err = ed.cl[id].cl.Get(ctx, key)
+		rep, err = ed.cl[id].cl.Get(ctx, string(keyB))
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +99,7 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 		}
 
 	} else {
-		rep, err = ed.cl[id].cl.Get(ctx, key)
+		rep, err = ed.cl[id].cl.Get(ctx, string(keyB))
 		if err != nil {
 			return nil, err
 		}
@@ -120,6 +127,11 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 		return fmt.Errorf("could not load threadid from context")
 	}
 
+	keyB, err := convertKeyToInt64Binary(key)
+	if err != nil {
+		return fmt.Errorf("could not convert key, err: %w", err)
+	}
+
 	// get a single value from values map
 	var val []byte
 	for k := range values {
@@ -130,7 +142,7 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 	// if measuring latency for this request
 	if ed.lat && (recordAll || ed.mustCheckLat(id)) {
 		st := time.Now()
-		_, err := ed.cl[id].cl.Put(ctx, key, string(val))
+		_, err := ed.cl[id].cl.Put(ctx, string(keyB), string(val))
 		if err != nil {
 			return err
 		}
@@ -141,7 +153,7 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 		}
 
 	} else {
-		_, err := ed.cl[id].cl.Put(ctx, key, string(val))
+		_, err := ed.cl[id].cl.Put(ctx, string(keyB), string(val))
 		if err != nil {
 			return err
 		}
@@ -156,9 +168,37 @@ func (ed *etcdDB) Insert(ctx context.Context, table string, key string, values m
 // Update updates a record in the database. Any field/value pairs will be written into the
 // database or overwritten the existing values with the same field name.
 func (ed *etcdDB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
-	// Threating as the same procedure for now. Updates and Inserts are never present on the
-	// same workload, so its ok.
+	// Threating as the same procedure. Updates and Inserts are never present on the same
+	// workload, so its ok.
 	return ed.Insert(ctx, table, key, values)
+}
+
+// Same procedure as etcd's benchmark: https://github.com/etcd-io/etcd/blob/main/tools/benchmark/cmd/put.go#L110
+//  1. removes "user" preffix from "user9083170225680086660"
+//  2. convert "9083170225680086660" string to int64
+//  3. binary encode 9083170225680086660
+//
+// IMPORTANT: using binary.Size() doesnt work to calculate the size of the bytes
+// buffer, since sometimes it would lead to a panic from binary.PutVarint(). Instead,
+// i've set to a fixed size 10B, due to this doc:
+//
+//   'At most 10 bytes are needed for 64-bit values. The encoding could
+//   be more dense: a full 64-bit value needs an extra byte just to hold bit 63.
+//   Instead, the msb of the previous byte could be used to hold bit 63 since we
+//   know there can't be more than 64 bits. This is a trivial improvement and
+//   would reduce the maximum encoding length to 9 bytes. However, it breaks the
+//   invariant that the msb is always the "continuation bit" and thus makes the
+//   format incompatible with a varint encoding for larger numbers (say 128-bit).'
+func convertKeyToInt64Binary(key string) ([]byte, error) {
+	key = strings.TrimPrefix(key, "user")
+	num, err := strconv.ParseInt(key, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	k := make([]byte, 10)
+	binary.PutVarint(k, num)
+	return k, nil
 }
 
 // InitThread initializes the state associated to the goroutine worker.
