@@ -88,7 +88,7 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 	// if measuring latency for this request
 	if ed.lat && (recordAll || ed.mustCheckLat(id)) {
 		st := time.Now()
-		rep, err = ed.cl[id].cl.Get(ctx, string(keyB))
+		rep, err = ed.cl[id].cl.Get(ctx, string(keyB), clientv3.WithSerializable())
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +99,7 @@ func (ed *etcdDB) Read(ctx context.Context, table string, key string, fields []s
 		}
 
 	} else {
-		rep, err = ed.cl[id].cl.Get(ctx, string(keyB))
+		rep, err = ed.cl[id].cl.Get(ctx, string(keyB), clientv3.WithSerializable())
 		if err != nil {
 			return nil, err
 		}
