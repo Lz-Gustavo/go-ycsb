@@ -30,16 +30,15 @@ const (
 	defaultNumberOfConns = 1
 
 	// One client has a '1/measureChance' chance to capture latency of it's next requisition.
-	measureChance = 30
+	measureChance = 10
 
 	// The ceil of 'clients/watcherRatio' indicates the number of clients recording latency
-	// based on 'measureChance'. A ratio greater then the number of clients indicates that all
-	// clients will be recording latency.
-	watcherRatio = 3
+	// based on 'measureChance'. A ratio of 1 indicates that all clients will be recording.
+	watcherRatio = 1
 
 	// Overwrites all previous configurations and enables latency measurement on all requests,
 	// if a 'etcdLatencyFilename' was configured.
-	recordAll = true
+	recordAll = false
 
 	// Sleeps up to thinkTime msec after each request. If no etcdThinkingTime property is informed,
 	// defaultThinkTime value is assumed. A zero or negative number completely disables it.
@@ -196,7 +195,7 @@ func convertKeyToInt64Binary(key string) ([]byte, error) {
 		return nil, err
 	}
 
-	k := make([]byte, 10)
+	k := make([]byte, binary.MaxVarintLen64)
 	binary.PutVarint(k, num)
 	return k, nil
 }
