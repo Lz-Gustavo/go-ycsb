@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 
 	"github.com/magiconair/properties"
-	"github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
 	"github.com/pingcap/go-ycsb/pkg/ycsb"
 )
 
