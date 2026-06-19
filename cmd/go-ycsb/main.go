@@ -40,44 +40,12 @@ import (
 
 	// Register basic database
 	_ "github.com/pingcap/go-ycsb/db/basic"
-	// Register MySQL database
-	_ "github.com/pingcap/go-ycsb/db/mysql"
-	// Register TiKV database
-	_ "github.com/pingcap/go-ycsb/db/tikv"
-	// Register PostgreSQL database
-	_ "github.com/pingcap/go-ycsb/db/pg"
-	// Register Aerospike database
-	_ "github.com/pingcap/go-ycsb/db/aerospike"
-	// Register Badger database
-	_ "github.com/pingcap/go-ycsb/db/badger"
-	// Register FoundationDB database
-	_ "github.com/pingcap/go-ycsb/db/foundationdb"
-	// Register RocksDB database
-	_ "github.com/pingcap/go-ycsb/db/rocksdb"
-	// Register Spanner database
-	_ "github.com/pingcap/go-ycsb/db/spanner"
-	// Register pegasus database
-	_ "github.com/pingcap/go-ycsb/db/pegasus"
-	// Register sqlite database
-	_ "github.com/pingcap/go-ycsb/db/sqlite"
-	// Register cassandra database
-	_ "github.com/pingcap/go-ycsb/db/cassandra"
-	// Register mongodb database
-	_ "github.com/pingcap/go-ycsb/db/mongodb"
 	// Register redis database
 	_ "github.com/pingcap/go-ycsb/db/redis"
 	// Register boltdb database
 	_ "github.com/pingcap/go-ycsb/db/boltdb"
-	// Register minio
-	_ "github.com/pingcap/go-ycsb/db/minio"
-	// Register elastic
-	_ "github.com/pingcap/go-ycsb/db/elasticsearch"
 	// Register etcd
 	_ "github.com/pingcap/go-ycsb/db/etcd"
-	// Register dynamodb
-	_ "github.com/pingcap/go-ycsb/db/dynamodb"
-	// Register s3 database
-	_ "github.com/pingcap/go-ycsb/db/s3"
 )
 
 var (
@@ -142,7 +110,7 @@ func initialGlobal(dbName string, onProperties func()) {
 	if globalDB, err = dbCreator.Create(globalProps); err != nil {
 		util.Fatalf("create db %s failed %v", dbName, err)
 	}
-	globalDB = client.DbWrapper{globalDB}
+	globalDB = client.DbWrapper{DB: globalDB}
 }
 
 func main() {
