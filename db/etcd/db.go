@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ const (
 	etcdKeyFile           = "etcd.key_file"
 	etcdCaFile            = "etcd.cacert_file"
 	etcdSerializableReads = "etcd.serializable_reads"
+
+	// NOTE (Gus): each request has a '1/measureChance' chance to record latency
+	measureChance          = 10
+	etcdLatencyMsrFilename = "etcd.latfilename"
 )
 
 type etcdCreator struct{}
@@ -32,6 +37,9 @@ type etcdCreator struct{}
 type etcdDB struct {
 	p      *properties.Properties
 	client *clientv3.Client
+
+	isLatencyMsrEnabled bool
+	latMsr              *LatencyMsr
 }
 
 func init() {
@@ -49,10 +57,20 @@ func (c etcdCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 		return nil, err
 	}
 
-	return &etcdDB{
+	db := &etcdDB{
 		p:      p,
 		client: client,
-	}, nil
+	}
+
+	fn, isLatMsrEnabled := p.Get(etcdLatencyMsrFilename)
+	if isLatMsrEnabled {
+		db.latMsr, err = NewLatencyMsr(fn)
+		if err != nil {
+			return nil, err
+		}
+		db.isLatencyMsrEnabled = true
+	}
+	return db, nil
 }
 
 func getClientConfig(p *properties.Properties) (*clientv3.Config, error) {
@@ -81,6 +99,12 @@ func getClientConfig(p *properties.Properties) (*clientv3.Config, error) {
 }
 
 func (db *etcdDB) Close() error {
+	if db.isLatencyMsrEnabled {
+		if err := db.latMsr.Flush(); err != nil {
+			return err
+		}
+		db.latMsr.Close()
+	}
 	return db.client.Close()
 }
 
@@ -101,9 +125,26 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 	if db.p.GetBool(etcdSerializableReads, false) {
 		options = append(options, clientv3.WithSerializable())
 	}
-	value, err := db.client.Get(ctx, rkey, options...)
-	if err != nil {
-		return nil, err
+
+	var value *clientv3.GetResponse
+	var err error
+
+	if db.isLatencyMsrEnabled && mustMeasureLat() {
+		start := time.Now()
+		value, err = db.client.Get(ctx, rkey, options...)
+		if err != nil {
+			return nil, err
+		}
+
+		if err = db.latMsr.Record(time.Since(start)); err != nil {
+			return nil, err
+		}
+
+	} else {
+		value, err = db.client.Get(ctx, rkey, options...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if value.Count == 0 {
@@ -151,11 +192,23 @@ func (db *etcdDB) Update(ctx context.Context, table string, key string, values m
 	if err != nil {
 		return err
 	}
-	_, err = db.client.Put(ctx, rkey, string(data))
-	if err != nil {
-		return err
-	}
 
+	if db.isLatencyMsrEnabled && mustMeasureLat() {
+		start := time.Now()
+		if _, err = db.client.Put(ctx, rkey, string(data)); err != nil {
+			return err
+		}
+
+		if err = db.latMsr.Record(time.Since(start)); err != nil {
+			return err
+		}
+
+	} else {
+		_, err = db.client.Put(ctx, rkey, string(data))
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -169,4 +222,8 @@ func (db *etcdDB) Delete(ctx context.Context, table string, key string) error {
 		return err
 	}
 	return nil
+}
+
+func mustMeasureLat() bool {
+	return rand.Intn(measureChance) == 0
 }
