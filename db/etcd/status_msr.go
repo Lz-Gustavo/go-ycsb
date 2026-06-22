@@ -3,6 +3,7 @@ package etcd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -37,16 +38,17 @@ func NewStatusMsr(filename string) (*StatusMsr, error) {
 	return sm, nil
 }
 
-func (sm *StatusMsr) CountSuccess() {
-	sm.countSuccess.Add(1)
-}
+func (sm *StatusMsr) CountStatusFromErr(err error) {
+	if err == nil {
+		sm.countSuccess.Add(1)
 
-func (sm *StatusMsr) CountTimeout() {
-	sm.countTimeout.Add(1)
-}
+		// TODO (Gus): must evaluate if this error assert works
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		sm.countTimeout.Add(1)
 
-func (sm *StatusMsr) CountFail() {
-	sm.countFail.Add(1)
+	} else {
+		sm.countFail.Add(1)
+	}
 }
 
 func (sm *StatusMsr) Run(ctx context.Context) {

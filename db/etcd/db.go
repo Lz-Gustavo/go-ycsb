@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -33,6 +32,9 @@ const (
 	measureChance          = 10
 	etcdLatencyMsrFilename = "etcd.latfilename"
 	etcdStatusMsrFilename  = "etcd.statusfilename"
+
+	etcdCommandTimeout    = "etcd.commandtimeout"
+	defaultCommandTimeout = 5 * time.Second
 )
 
 type etcdCreator struct{}
@@ -154,6 +156,11 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 		options = append(options, clientv3.WithSerializable())
 	}
 
+	// NOTE (Gus): set command timeout to avoid indefinitive request stall
+	cmdTimeout := db.p.GetDuration(etcdCommandTimeout, defaultCommandTimeout)
+	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
+	defer cancel()
+
 	var value *clientv3.GetResponse
 	var err error
 
@@ -176,16 +183,7 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 	}
 
 	if db.isStatusMsrEnabled {
-		if err == nil {
-			db.statusMsr.CountSuccess()
-
-			// TODO (Gus): must evaluate if this error assert works
-		} else if errors.Is(err, context.DeadlineExceeded) {
-			db.statusMsr.CountTimeout()
-
-		} else {
-			db.statusMsr.CountFail()
-		}
+		db.statusMsr.CountStatusFromErr(err)
 	}
 
 	if value.Count == 0 {
@@ -234,6 +232,11 @@ func (db *etcdDB) Update(ctx context.Context, table string, key string, values m
 		return err
 	}
 
+	// NOTE (Gus): set command timeout to avoid indefinitive request stall
+	cmdTimeout := db.p.GetDuration(etcdCommandTimeout, defaultCommandTimeout)
+	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
+	defer cancel()
+
 	if db.isLatencyMsrEnabled && mustMeasureLat() {
 		start := time.Now()
 		if _, err = db.client.Put(ctx, rkey, string(data)); err != nil {
@@ -251,16 +254,7 @@ func (db *etcdDB) Update(ctx context.Context, table string, key string, values m
 	}
 
 	if db.isStatusMsrEnabled {
-		if err == nil {
-			db.statusMsr.CountSuccess()
-
-			// TODO (Gus): must evaluate if this error assert works
-		} else if errors.Is(err, context.DeadlineExceeded) {
-			db.statusMsr.CountTimeout()
-
-		} else {
-			db.statusMsr.CountFail()
-		}
+		db.statusMsr.CountStatusFromErr(err)
 	}
 	return nil
 }
