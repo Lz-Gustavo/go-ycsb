@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -27,9 +28,11 @@ const (
 	etcdCaFile            = "etcd.cacert_file"
 	etcdSerializableReads = "etcd.serializable_reads"
 
-	// NOTE (Gus): each request has a '1/measureChance' chance to record latency
+	// NOTE (Gus): each request has a '1/measureChance' chance to record latency and/or
+	// the response status code
 	measureChance          = 10
 	etcdLatencyMsrFilename = "etcd.latfilename"
+	etcdStatusMsrFilename  = "etcd.statusfilename"
 )
 
 type etcdCreator struct{}
@@ -40,6 +43,10 @@ type etcdDB struct {
 
 	isLatencyMsrEnabled bool
 	latMsr              *LatencyMsr
+
+	isStatusMsrEnabled bool
+	statusMsr          *StatusMsr
+	stopMsr            context.CancelFunc
 }
 
 func init() {
@@ -69,6 +76,19 @@ func (c etcdCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 			return nil, err
 		}
 		db.isLatencyMsrEnabled = true
+	}
+
+	fn, isStatusMsrEnabled := p.Get(etcdStatusMsrFilename)
+	if isStatusMsrEnabled {
+		db.statusMsr, err = NewStatusMsr(fn)
+		if err != nil {
+			return nil, err
+		}
+		db.isStatusMsrEnabled = true
+
+		ctx, cancelF := context.WithCancel(context.Background())
+		go db.statusMsr.Run(ctx)
+		db.stopMsr = cancelF
 	}
 	return db, nil
 }
@@ -104,6 +124,14 @@ func (db *etcdDB) Close() error {
 			return err
 		}
 		db.latMsr.Close()
+	}
+
+	if db.isStatusMsrEnabled {
+		db.stopMsr()
+		if err := db.statusMsr.Flush(); err != nil {
+			return err
+		}
+		db.statusMsr.Close()
 	}
 	return db.client.Close()
 }
@@ -144,6 +172,19 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 		value, err = db.client.Get(ctx, rkey, options...)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	if db.isStatusMsrEnabled {
+		if err == nil {
+			db.statusMsr.CountSuccess()
+
+			// TODO (Gus): must evaluate if this error assert works
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			db.statusMsr.CountTimeout()
+
+		} else {
+			db.statusMsr.CountFail()
 		}
 	}
 
@@ -204,9 +245,21 @@ func (db *etcdDB) Update(ctx context.Context, table string, key string, values m
 		}
 
 	} else {
-		_, err = db.client.Put(ctx, rkey, string(data))
-		if err != nil {
+		if _, err = db.client.Put(ctx, rkey, string(data)); err != nil {
 			return err
+		}
+	}
+
+	if db.isStatusMsrEnabled {
+		if err == nil {
+			db.statusMsr.CountSuccess()
+
+			// TODO (Gus): must evaluate if this error assert works
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			db.statusMsr.CountTimeout()
+
+		} else {
+			db.statusMsr.CountFail()
 		}
 	}
 	return nil

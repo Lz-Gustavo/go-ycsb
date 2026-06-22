@@ -4,6 +4,7 @@ ycsbPath=~/go/src/github.com/Lz-Gustavo/go-ycsb/
 
 etcdHostname="127.0.0.1:2370"
 etcdLatFilename=/tmp/client-latency.out
+etcdStatusFilename=/tmp/client-status-codes.out
 
 workloads=("workloada")
 numDiffKeys=1000000 # 1kk
@@ -33,7 +34,8 @@ increaseByTargetThroughput() {
             n=${numOps[$j]}
 
             echo "#${i}-${workload}/${j}: executing $t target throughput"
-            ${ycsbPath}/bin/go-ycsb run etcd -P ${ycsbPath}/workloads/${workload} -p target=${t} -p threadcount=${numThreads} -p recordcount=${numDiffKeys} -p operationcount=${n} -p etcd.endpoints=${etcdHostname} -p etcd.latfilename=${etcdLatFilename}
+            ${ycsbPath}/bin/go-ycsb run etcd -P ${ycsbPath}/workloads/${workload} -p target=${t} -p threadcount=${numThreads} -p recordcount=${numDiffKeys} -p operationcount=${n} -p etcd.endpoints=${etcdHostname} \
+                -p etcd.latfilename=${etcdLatFilename} -p etcd.statusfilename=${etcdStatusFilename}
         done
     done
     echo "#${i}: finished target thr iteration"; echo ""

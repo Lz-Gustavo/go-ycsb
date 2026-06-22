@@ -28,22 +28,22 @@ func NewLatencyMsr(filename string) (*LatencyMsr, error) {
 	return lm, nil
 }
 
-func (rm *LatencyMsr) Record(lat time.Duration) error {
-	_, err := fmt.Fprintf(rm.buff, "%d\n", lat.Nanoseconds())
+func (lm *LatencyMsr) Record(lat time.Duration) error {
+	_, err := fmt.Fprintf(lm.buff, "%d\n", lat.Nanoseconds())
 	return err
 }
 
-func (rm *LatencyMsr) Flush() error {
-	if _, err := rm.buff.WriteTo(rm.file); err != nil {
+func (lm *LatencyMsr) Flush() error {
+	if _, err := lm.buff.WriteTo(lm.file); err != nil {
 		return err
 	}
 
-	if err := rm.file.Sync(); err != nil {
+	if err := lm.file.Sync(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (rm *LatencyMsr) Close() error {
-	return rm.file.Close()
+func (lm *LatencyMsr) Close() error {
+	return lm.file.Close()
 }
