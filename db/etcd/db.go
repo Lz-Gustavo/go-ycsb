@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -167,23 +168,21 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 	if db.isLatencyMsrEnabled && mustMeasureLat() {
 		start := time.Now()
 		value, err = db.client.Get(ctx, rkey, options...)
-		if err != nil {
-			return nil, err
-		}
 
-		if err = db.latMsr.Record(time.Since(start)); err != nil {
-			return nil, err
+		if errL := db.latMsr.Record(time.Since(start)); errL != nil {
+			log.Fatalln("failed writing lat measurement, err:", errL.Error())
 		}
 
 	} else {
 		value, err = db.client.Get(ctx, rkey, options...)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if db.isStatusMsrEnabled {
 		db.statusMsr.CountStatusFromErr(err)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	if value.Count == 0 {
@@ -191,8 +190,7 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 	}
 
 	var r map[string][]byte
-	err = json.NewDecoder(bytes.NewReader(value.Kvs[0].Value)).Decode(&r)
-	if err != nil {
+	if err = json.NewDecoder(bytes.NewReader(value.Kvs[0].Value)).Decode(&r); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -239,24 +237,20 @@ func (db *etcdDB) Update(ctx context.Context, table string, key string, values m
 
 	if db.isLatencyMsrEnabled && mustMeasureLat() {
 		start := time.Now()
-		if _, err = db.client.Put(ctx, rkey, string(data)); err != nil {
-			return err
-		}
+		_, err = db.client.Put(ctx, rkey, string(data))
 
-		if err = db.latMsr.Record(time.Since(start)); err != nil {
-			return err
+		if errL := db.latMsr.Record(time.Since(start)); errL != nil {
+			log.Fatalln("failed writing lat measurement, err:", errL.Error())
 		}
 
 	} else {
-		if _, err = db.client.Put(ctx, rkey, string(data)); err != nil {
-			return err
-		}
+		_, err = db.client.Put(ctx, rkey, string(data))
 	}
 
 	if db.isStatusMsrEnabled {
 		db.statusMsr.CountStatusFromErr(err)
 	}
-	return nil
+	return err
 }
 
 func (db *etcdDB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {

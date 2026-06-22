@@ -42,7 +42,6 @@ func (sm *StatusMsr) CountStatusFromErr(err error) {
 	if err == nil {
 		sm.countSuccess.Add(1)
 
-		// TODO (Gus): must evaluate if this error assert works
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		sm.countTimeout.Add(1)
 
