@@ -158,7 +158,7 @@ func (db *etcdDB) Read(ctx context.Context, table string, key string, _ []string
 	}
 
 	// NOTE (Gus): set command timeout to avoid indefinitive request stall
-	cmdTimeout := db.p.GetDuration(etcdCommandTimeout, defaultCommandTimeout)
+	cmdTimeout := db.getCommandTimeout()
 	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
 	defer cancel()
 
@@ -231,7 +231,7 @@ func (db *etcdDB) Update(ctx context.Context, table string, key string, values m
 	}
 
 	// NOTE (Gus): set command timeout to avoid indefinitive request stall
-	cmdTimeout := db.p.GetDuration(etcdCommandTimeout, defaultCommandTimeout)
+	cmdTimeout := db.getCommandTimeout()
 	ctx, cancel := context.WithTimeout(ctx, cmdTimeout)
 	defer cancel()
 
@@ -263,6 +263,19 @@ func (db *etcdDB) Delete(ctx context.Context, table string, key string) error {
 		return err
 	}
 	return nil
+}
+
+func (db *etcdDB) getCommandTimeout() time.Duration {
+	val := db.p.GetString(etcdCommandTimeout, "")
+	if val == "" {
+		return defaultCommandTimeout
+	}
+
+	timeout, err := time.ParseDuration(val)
+	if err != nil {
+		return defaultCommandTimeout
+	}
+	return timeout
 }
 
 func mustMeasureLat() bool {
